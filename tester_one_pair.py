@@ -55,7 +55,9 @@ class Strategy:
         for i in range(num_of_assets):
             X0[i,0] = self.assetHistClose[var_model.assetNames[i]][-1]
         
-        weight = var_model.solve(self.maturity-self.timeLeft,self.maturity,X0,1,1.1).flatten()
+        weight = var_model.solve(self.maturity-self.timeLeft,self.maturity,X0,1,1.01).flatten()
+        print weight
+        raw_input(3)
         #if self.current_asset<=1.01:
         #    weight = var_model.solve(T,X0,self.current_asset,1.01).flatten()
         #elif self.current_asset>1.01:
@@ -130,7 +132,7 @@ def calculate_pnl(signal_df,data,assetNames):
 
 
 def main():
-    data = pd.read_csv('2800_2828.csv',index_col=0,parse_dates=True)
+    data = pd.read_csv('SPY_IVV.csv',index_col=0,parse_dates=True)
     data = np.log(data)
     signal_list = []
 
@@ -152,8 +154,6 @@ def main():
         #if strategy.timeLeft<strategy.maturity-1:
         #    signal = last_signal
         last_signal = signal
-        print signal
-        raw_input(3)
         signal_list.append(signal)
 
     signal_df = pd.DataFrame(signal_list)

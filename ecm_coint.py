@@ -41,7 +41,7 @@ class VAR:
         self.data = data
 
         num_of_cointegration = len(rejected_r_values)
-        self.um_of_cointegration = num_of_cointegration
+        self.num_of_cointegration = num_of_cointegration
 
         if num_of_cointegration==0:
             # Suppose there is no cointegration relationship, reduce the model to general log-normal model with low statistical power and premium
@@ -249,6 +249,33 @@ class ECMCoint:
         print ("Implied Sharpe: %s"%self.price_of_risk)
         print ("Arbitrage Index: %s"%self.arbitrage_index)
 
+    def get_coefficients(self,maturity,X0,Y_hat):
+        # Get the coefficients needed to calculate the optimal allocation
+        # This should be called at time 0
+        cov = self.sigma.dot(self.sigma.T)
+        cov_inv = inv(cov)
+        NUM_OF_ASSETS = len(self.A)
+
+        D = np.diag(np.diag(cov))
+
+        THETA = 0.5*self.A.dot(D).dot(np.ones([NUM_OF_ASSETS,1])) - self.r*self.A.dot(np.ones([NUM_OF_ASSETS,1]))
+        alpha = self.theta - self.A.dot(X0) + 0.5*D.dot(np.ones([NUM_OF_ASSETS,1])) - self.r*np.ones([NUM_OF_ASSETS,1])
+
+        # aim is to get the lambda
+        def K_hat(t,T):
+            return 2*cov_inv*(T-t)
+        def N_hat(t,T):
+            return (THETA.T.dot(cov_inv)*(T-t)**2).T
+        def M_hat(t,T):
+            return (1/3)*float(THETA.T.dot(cov_inv).dot(THETA))*(T-t)**3 + np.trace(self.sigma.T.dot(self.A.T).dot(cov_inv).dot(self.A).dot(self.sigma))/2 *(T-t)**2
+        def H_hat(T):
+            return 0.5*alpha.T.dot(K_hat(0,maturity)).dot(alpha) + N_hat(0,maturity).T.dot(alpha)+M_hat(0,maturity)
+
+        H_hat_T = float(H_hat(maturity))
+
+        self.lambda = (Y_hat - np.exp(self.r*maturity)*1)/H_hat_T
+
+
     def solve_time_consistent(self,t,maturity,X_t,Y_0,Y_hat):
         '''
         give out a solution that is time-consistent
@@ -256,6 +283,8 @@ class ECMCoint:
         
         The optimal control u only concerns the current price level, time left, initial wealth and target;
         it does not care about the current state of wealth
+
+        Must be done after self.get_coefficients have been called
         '''
         cov = self.sigma.dot(self.sigma.T)
         cov_inv = inv(cov)
@@ -271,22 +300,13 @@ class ECMCoint:
             return 2*cov_inv*(T-t)
         def N_hat(t,T):
             return (THETA.T.dot(cov_inv)*(T-t)**2).T
-        def M_hat(t,T):
-            return (1/3)*float(THETA.T.dot(cov_inv).dot(THETA))*(T-t)**3 + np.trace(self.sigma.T.dot(self.A.T).dot(cov_inv).dot(self.A).dot(self.sigma))/2 *(T-t)**2
-
 
         alpha = self.theta - self.A.dot(X_t) + 0.5*D.dot(np.ones([NUM_OF_ASSETS,1])) - self.r*np.ones([NUM_OF_ASSETS,1])
 
         # H_hat is only needed for (H_hat(0,alpha(0),T)):
 
-        def H_hat(T):
-            return 0.5*alpha.T.dot(K_hat(0,maturity)).dot(alpha) + N_hat(0,maturity).T.dot(alpha)+M_hat(0,maturity)
-
-        H_hat_T = float(H_hat(T))
-
-
         # The Y_0 should not have been changed
-        u = (Y_hat*np.exp(-self.r*(maturity-t))-Y_0*np.exp(self.r*t))/(H_hat_T) * ((cov_inv+self.A.T.dot(K_hat(t,maturity))).dot(alpha)+self.A.T.dot(N_hat(t,maturity)))
+        u = self.lambda * np.exp(self.r*(maturity-t)) * ((cov_inv+self.A.T.dot(K_hat(t,maturity))).dot(alpha)+self.A.T.dot(N_hat(t,maturity)))
 
         return u
 
