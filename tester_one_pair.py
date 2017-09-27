@@ -13,10 +13,19 @@ class Strategy:
         #parameters
 
         self.assetNames = assetNames
+        # How long data to use to fit a model
         self.cointLookBack = 250
+        # Maximum deployable capital
         self.capital = 1
-        self.maturity = 1
-        self.timeLeft = 0
+        # The capitial that's willing to be risked at entry
+        self.entry_capital = 0.25
+        self.target_return = 1.001
+
+        # Set investment horizon
+        self.maturity = 5
+        # Set time index
+        self.time_index = 0
+        # Record price
         self.assetHistClose = {}
         self.var = None
         self.current_asset = 1
@@ -24,7 +33,10 @@ class Strategy:
             self.assetHistClose[asset] = deque([],maxlen=self.cointLookBack)
 
     def fit_var(self):
+        # get a var model with ecmcoint, see if it is appropriate to make an entry now
         self.var = None
+        self.time_index = 0
+
         if len(self.assetHistClose[self.assetNames[0]]) == self.cointLookBack:
             print "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
             print 'Fitting var....'
@@ -36,42 +48,59 @@ class Strategy:
             self.current_asset = 1
             if self.var.num_of_cointegration==0:
                 self.var = None
+            else:
+                X0 = np.matrix([[self.assetHistClose[self.assetNames[0]][-1]],[self.assetHistClose[self.assetNames[1]][-1]]])
+                self.var.ecmcoint.get_coefficients(self.maturity,X0,self.target_return)
+                weight = self.var.ecmcoint.solve_time_consistent(0,self.maturity,X0,1,self.target_return)
+                print 'Suggested entry weight: %s'%weight
+                if np.abs(weight).sum()<=self.entry_capital:
+                    print "Right timing, risk capital"
+                else:
+                    print "Currently not a good time to open position"
+                    self.var = None
+                
+    def get_optimal_allocation(self):
+        if self.time_index>= self.maturity:
+            print "Came to end, clear and out"
+            weight = np.zeros([len(self.assetNames),1])
+            self.var = None
+            
+        elif self.var is not None:
+            # var model is available, then start to act
+            
+            X_t = np.matrix([[self.assetHistClose[self.assetNames[0]][-1]],[self.assetHistClose[self.assetNames[1]][-1]]])
+            weight =  self.var.ecmcoint.solve_time_consistent(self.time_index,self.maturity,X_t,self.capital,self.target_return)
+            print 'Weight suggested: %s'%weight
+            if self.current_asset>=self.target_return:
+                print "Objective achieved, clear and out"
+                weight = np.zeros([len(self.assetNames),1])
+                self.var = None
+            elif np.abs(weight).sum()>1:
+                print "Requesting more capital than endured, clear and out"
+                weight = np.zeros([len(self.assetNames),1])
+                self.var = None
+            
+
+            self.time_index +=1
+        else:
+            weight = np.zeros([len(self.assetNames),1])
+
+
+        result = {}
+        for i in range(len(self.assetNames)):
+            result[self.assetNames[i]] = weight[i,0]
+
+
+        return result
+
 
     def update_current_asset(self,last_signal):
         if len(self.assetHistClose[self.assetNames[0]])>=2:
             for key in last_signal:
                 self.current_asset += last_signal[key]*(self.assetHistClose[key][-1]-self.assetHistClose[key][-2])/self.capital
             print 'Current asset: %s'%self.current_asset
-
-        
         
             
-
-    def get_optimal_allocation(self,var_model,signal,T):
-
-            
-        num_of_assets = len(var_model.assetNames)
-        X0 = np.zeros([num_of_assets,1])
-        for i in range(num_of_assets):
-            X0[i,0] = self.assetHistClose[var_model.assetNames[i]][-1]
-        
-        weight = var_model.solve(self.maturity-self.timeLeft,self.maturity,X0,1,1.01).flatten()
-        print weight
-        raw_input(3)
-        #if self.current_asset<=1.01:
-        #    weight = var_model.solve(T,X0,self.current_asset,1.01).flatten()
-        #elif self.current_asset>1.01:
-        #    self.timeLeft=-1
-        #    return signal
-            
-            #weight = var_model.solve(T,X0,self.current_asset,self.current_asset+0.1).flatten()
-
-        #weight = weight/np.abs(weight).sum()/len(self.var)
-        
-
-        for i in range(num_of_assets):
-            signal[var_model.assetNames[i]] += weight[i]
-        return signal
 
 
     def generate_trade_signal(self):
@@ -79,15 +108,13 @@ class Strategy:
         for key in self.assetNames:
             signal[key] = 0
 
-        if self.var is None  or self.timeLeft<=1:
+        if self.var is None:
             self.fit_var()
-            self.timeLeft = int(self.maturity)
 
         if self.var is not None:
-            self.timeLeft -= 1
+            # Cointegration premium is found
 
-            signal = self.get_optimal_allocation(self.var,signal,self.timeLeft)
-
+            signal = self.get_optimal_allocation()
 
             for key in signal:
                 signal[key] = signal[key]*self.capital
@@ -113,6 +140,8 @@ def calculate_pnl(signal_df,data,assetNames):
     combo_pnl = np.sum(pnl,axis=1)
     pnl = pd.DataFrame(pnl)
     pnl.columns = assetNames
+    print pnl
+    
     pnl.plot()
     plt.show()
     plt.plot(combo_pnl)

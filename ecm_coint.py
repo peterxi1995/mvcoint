@@ -273,7 +273,7 @@ class ECMCoint:
 
         H_hat_T = float(H_hat(maturity))
 
-        self.lambda = (Y_hat - np.exp(self.r*maturity)*1)/H_hat_T
+        self.lam = (Y_hat - np.exp(self.r*maturity)*1)/H_hat_T
 
 
     def solve_time_consistent(self,t,maturity,X_t,Y_0,Y_hat):
@@ -306,7 +306,7 @@ class ECMCoint:
         # H_hat is only needed for (H_hat(0,alpha(0),T)):
 
         # The Y_0 should not have been changed
-        u = self.lambda * np.exp(self.r*(maturity-t)) * ((cov_inv+self.A.T.dot(K_hat(t,maturity))).dot(alpha)+self.A.T.dot(N_hat(t,maturity)))
+        u = self.lam * np.exp(self.r*(maturity-t)) * ((cov_inv+self.A.T.dot(K_hat(t,maturity))).dot(alpha)+self.A.T.dot(N_hat(t,maturity)))
 
         return u
 
@@ -328,6 +328,7 @@ if __name__ == '__main__':
     model = VAR(data,data.columns)
     model.summary()
     model.fit_ecm_coint(0)
-    print model.solve(100,np.matrix([[data.values[-1,0]],[data.values[-1,1]]]),1,1.2)
+    model.ecmcoint.get_coefficients(10,np.matrix([[10],[201]]),1.01)
+    print model.solve(0,10,np.matrix([[data.values[-1,0]],[data.values[-1,1]]]),1,1.01)
     
 
